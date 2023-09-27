@@ -45,7 +45,9 @@ ckReprocess = 'reprocess'
 ckReprocessPrevConfig = 'reprocessPrevConfig'
 ckEnableProcessByLine = 'enableProcessByLine'
 
-
+ckEnableGroupFiltering = 'enableGroupFiltering'
+ckGroupFilteringMaximumLookahead = 'groupFilteringMaximumLookahead'
+ckGroups = 'groups'
 
 #
 #
@@ -173,6 +175,11 @@ def propagateEverything(origin, target):
     propagateArgOverride(ckEnableTemplateCollapsing, origin, target)
     propagateArgOverride(ckEnableProcessByLine, origin, target)
 
+
+    propagateArgOverride(ckEnableGroupFiltering, origin, target)
+    propagateArgOverride(ckGroupFilteringMaximumLookahead, origin, target)
+    propagateArgOverride(ckGroups, origin, target)
+
     # TODO: ?
     # propagateArgOverride(ckEnableTempCache, origin, target)
 
@@ -200,18 +207,22 @@ class Camomilla:
 
         self._cache = []
         self._flush = False
-        self._active_group = False
+        self._active_group = -1
 
     # Configuration getters
-    def namespaceReplacements(self):        return self._conf[ckNamespaceReplacements]
-    def genericReplacements(self):          return self._conf[ckGenericReplacements]
-    def templateCollapsingDepth(self):      return self._conf[ckTemplateCollapsingDepth]
-    def enableNamespaceReplacements(self):  return self._conf[ckEnableNamespaceReplacements]
-    def enableGenericReplacements(self):    return self._conf[ckEnableGenericReplacements]
-    def enableTemplateCollapsing(self):     return self._conf[ckEnableTemplateCollapsing]
-    def enableTempCache(self):              return self._conf[ckEnableTempCache]
-    def enableProcessByLine(self):          return self._conf[ckEnableProcessByLine]
-    def reprocess(self):                    return self._conf[ckReprocess]
+    def namespaceReplacements(self):            return self._conf[ckNamespaceReplacements]
+    def genericReplacements(self):              return self._conf[ckGenericReplacements]
+    def templateCollapsingDepth(self):          return self._conf[ckTemplateCollapsingDepth]
+    def enableNamespaceReplacements(self):      return self._conf[ckEnableNamespaceReplacements]
+    def enableGenericReplacements(self):        return self._conf[ckEnableGenericReplacements]
+    def enableTemplateCollapsing(self):         return self._conf[ckEnableTemplateCollapsing]
+    def enableTempCache(self):                  return self._conf[ckEnableTempCache]
+    def enableProcessByLine(self):              return self._conf[ckEnableProcessByLine]
+    def reprocess(self):                        return self._conf[ckReprocess]
+
+    def enableGroupFiltering(self):             return self._conf[ckEnableGroupFiltering]
+    def groupFilteringMaximumLookahead(self):   return self._conf[ckGroupFilteringMaximumLookahead]
+    def groups(self):                           return self._conf[ckGroups]
 
     # From http://stackoverflow.com/questions/15175142/
     def _initRegex(self, k_mapper, v_mapper, xdict):
@@ -342,28 +353,32 @@ class Camomilla:
 
         cur = []
 
-        if self._active_group == False and ("In file included from" in src or "In function" in src or "warning:" in src):
-            self._active_group = True
+        if self._active_group == -1:
+            for i in range(0, len(self.groups())):
+                if self.groups()[i][0] in src:
+                    self._active_group = i
 
-        if self._active_group == True:
+        if self._active_group != -1:
             self._cache.append(src)
         else:
             cur = [src]
 
-        if self._active_group == True and "^" in src:
-            self._active_group = False
+        if self._active_group != -1 and self.groups()[self._active_group][1] in src:
+            self._active_group = -1
             delete = False
-            for line in self._cache:
-                if "yaaac_codegen" in line:
-                    delete = True
+            for filter in self.groups()[self._active_group][2]:
+                for line in self._cache:
+                    if filter in line:
+                        delete = True
             if delete == True:
+                # Write deleted content to file
                 with open('_generated/filtered_build_output.txt', 'a') as f:
                     f.write('\n'.join(self._cache))
                 self._cache = []
 
         # Flush after some time to empty cache
-        if len(self._cache) > 10:
-            self._active_group = False
+        if len(self._cache) > self.groupFilteringMaximumLookahead():
+            self._active_group = -1
             self._flush = True
             print("Warning: Camomilla could not find the match for a group.")
 
@@ -463,7 +478,8 @@ def loadConfig(path):
         res = {
             ckNamespaceReplacements: dict(),
             ckGenericReplacements: dict(),
-            ckConfigPaths: set()
+            ckConfigPaths: set(),
+            ckGroups: list(),
         }
 
         propagateEverything(j, res)
@@ -486,6 +502,8 @@ def makeInitialBaseConfig():
     conf[ckGenericReplacements] = dict()
     conf[ckConfigPaths] = []
 
+    conf[ckGroups] = []
+
     return conf
 
 def makeInitialConfig(args):
@@ -493,6 +511,8 @@ def makeInitialConfig(args):
     conf[ckNamespaceReplacements] = dict()
     conf[ckGenericReplacements] = dict()
     conf[ckConfigPaths] = conf[ckConfigPaths]
+
+    conf[ckGroups] = []
 
     conf[ckNamespaceReplacements]["std"] = ""
     conf[ckGenericReplacements]["<>"] = "<?>"
