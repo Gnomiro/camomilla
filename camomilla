@@ -206,7 +206,6 @@ class Camomilla:
         self._initRegexes()
 
         self._cache = []
-        self._flush = False
         self._active_group = -1
 
     # Configuration getters
@@ -223,6 +222,11 @@ class Camomilla:
     def enableGroupFiltering(self):             return self._conf[ckEnableGroupFiltering]
     def groupFilteringMaximumLookahead(self):   return self._conf[ckGroupFilteringMaximumLookahead]
     def groups(self):                           return self._conf[ckGroups]
+
+    def inGroup(self):                          return self._active_group != -1
+    def getGroupId(self):                       return self._active_group
+    def setGroupId(self, f_id):                 self._active_group = f_id
+    def unsetGroupId(self):                     self._active_group = -1
 
     # From http://stackoverflow.com/questions/15175142/
     def _initRegex(self, k_mapper, v_mapper, xdict):
@@ -351,41 +355,54 @@ class Camomilla:
         # _______________________________________________________
         #
 
-        cur = []
+        # Selection for processing; empty by default
+        selection = []
 
-        if self._active_group == -1:
-            for i in range(0, len(self.groups())):
-                if self.groups()[i][0] in src:
-                    self._active_group = i
+        # Group filtering ___________________________________
+        #
+        if self.enableGroupFiltering():
+            # No group is open yet
+            if not self.inGroup():
+                # Open a group when finding a match
+                for i in range(0, len(self.groups())):
+                    if self.groups()[i]["start"] in src:
+                        self.setGroupId(i)
+                        break
 
-        if self._active_group != -1:
-            self._cache.append(src)
-        else:
-            cur = [src]
+            # Cache the line if we are in an open group
+            # Otherwise select the current line for processing
+            if self.inGroup():
+                self._cache.append(src)
+            else:
+                selection = [src]
 
-        if self._active_group != -1 and self.groups()[self._active_group][1] in src:
-            self._active_group = -1
-            delete = False
-            for filter in self.groups()[self._active_group][2]:
-                for line in self._cache:
-                    if filter in line:
-                        delete = True
-            if delete == True:
-                # Write deleted content to file
-                with open('_generated/filtered_build_output.txt', 'a') as f:
-                    f.write('\n'.join(self._cache))
+            if self.inGroup() and self.groups()[self.getGroupId()]["end"] in src:
+                self.unsetGroupId()
+                delete = False
+                for filter in self.groups()[self.getGroupId()]["filter"]:
+                    for line in self._cache:
+                        if filter in line:
+                            delete = True
+                            break
+                if delete == True:
+                    # Write deleted content to file
+                    with open('_generated/filtered_build_output.txt', 'a') as f:
+                        f.write('\n'.join(self._cache))
+                    # Clear cache
+                    self._cache = []
+
+            # If cached lines exceed the maximum lookahead it will be flushed
+            if len(self._cache) > self.groupFilteringMaximumLookahead():
+                self.unsetGroupId()
+                selection = self._cache
                 self._cache = []
+                print("Warning: Maximum group lookahead exceeded. Resetting group and flushing output.")
+        else:
+            selection = [src]
+        # _______________________________________________________
+        #
 
-        # Flush after some time to empty cache
-        if len(self._cache) > self.groupFilteringMaximumLookahead():
-            self._active_group = -1
-            self._flush = True
-            print("Warning: Camomilla could not find the match for a group.")
-
-        if self._flush == True:
-            cur = self._cache + cur
-
-        for line in cur:
+        for line in selection:
 
             out = ""
             marked = []
@@ -435,11 +452,6 @@ class Camomilla:
             #
 
             ostream.write(out)
-
-        if self._flush == True:
-            # Clear cache
-            self._flush = False
-            self._cache = []
 
     def process(self, istream, ostream, temp_cache):
         if self.enableProcessByLine():
