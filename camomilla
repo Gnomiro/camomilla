@@ -198,6 +198,10 @@ class Camomilla:
 
         self._initRegexes()
 
+        self._cache = []
+        self._flush = False
+        self._active_group = False
+
     # Configuration getters
     def namespaceReplacements(self):        return self._conf[ckNamespaceReplacements]
     def genericReplacements(self):          return self._conf[ckGenericReplacements]
@@ -325,9 +329,6 @@ class Camomilla:
         return compiled_regex.sub(lambda x: self._subDisambiguator(mapped_dict, x), src)
 
     def _processImpl(self, src, ostream, temp_cache):
-        out = ""
-        marked = []
-
         # Write temp cache ______________________________________
         #
         if self.reprocess() == False and self.enableTempCache():
@@ -339,51 +340,91 @@ class Camomilla:
         # _______________________________________________________
         #
 
-        # Template collapsing ___________________________________
-        #
-        if self.enableTemplateCollapsing():
-            # Find all angle bracket pairs
-            angle_pairs = self._find_angles(src, 0, len(src))
+        cur = []
 
-            # Mark pairs matching desired depth for removal
-            for p in angle_pairs:
-                if p[2] > self.templateCollapsingDepth():
-                    marked.append(self._mark(p[0], p[1]))
+        if self._active_group == False and ("In file included from" in src or "In function" in src or "warning:" in src):
+            self._active_group = True
 
-            # Build output string by avoiding marked intervals
-            last = 0
-            for m in self._merged(marked):
-                out += src[last:m[0]]
-                last = m[1]
-            out += src[last:len(src)]
+        if self._active_group == True:
+            self._cache.append(src)
         else:
-            out = src
-        # _______________________________________________________
-        #
+            cur = [src]
 
-        # Namespace replacements_________________________________
-        #
-        if self.enableNamespaceReplacements():
-            # Replace namespace matches
-            out = self._multiple_replace( \
-                lambda k: k + r'::', \
-                lambda v: v + r'::' if len(v) > 0 else '', \
-                self.namespaceReplacements(), self._compiledNamespaceRegex, out)
-        # _______________________________________________________
-        #
+        if self._active_group == True and "^" in src:
+            self._active_group = False
+            delete = False
+            for line in self._cache:
+                if "yaaac_codegen" in line:
+                    delete = True
+            if delete == True:
+                with open('_generated/filtered_build_output.txt', 'a') as f:
+                    f.write('\n'.join(self._cache))
+                self._cache = []
 
-        # Generic replacements __________________________________
-        #
-        if self.enableGenericReplacements():
-            # Replace generic matches
-            out = self._multiple_replace( \
-                lambda k: k, \
-                lambda v: v, \
-                self.genericReplacements(), self._compiledGenericRegex, out)
-        # _______________________________________________________
-        #
+        # Flush after some time to empty cache
+        if len(self._cache) > 10:
+            self._active_group = False
+            self._flush = True
+            print("Warning: Camomilla could not find the match for a group.")
 
-        ostream.write(out)
+        if self._flush == True:
+            cur = self._cache + cur
+
+        for line in cur:
+
+            out = ""
+            marked = []
+
+            # Template collapsing ___________________________________
+            #
+            if self.enableTemplateCollapsing():
+                # Find all angle bracket pairs
+                angle_pairs = self._find_angles(line, 0, len(line))
+
+                # Mark pairs matching desired depth for removal
+                for p in angle_pairs:
+                    if p[2] > self.templateCollapsingDepth():
+                        marked.append(self._mark(p[0], p[1]))
+
+                # Build output string by avoiding marked intervals
+                last = 0
+                for m in self._merged(marked):
+                    out += line[last:m[0]]
+                    last = m[1]
+                out += line[last:len(line)]
+            else:
+                out = line
+            # _______________________________________________________
+            #
+
+            # Namespace replacements_________________________________
+            #
+            if self.enableNamespaceReplacements():
+                # Replace namespace matches
+                out = self._multiple_replace( \
+                    lambda k: k + r'::', \
+                    lambda v: v + r'::' if len(v) > 0 else '', \
+                    self.namespaceReplacements(), self._compiledNamespaceRegex, out)
+            # _______________________________________________________
+            #
+
+            # Generic replacements __________________________________
+            #
+            if self.enableGenericReplacements():
+                # Replace generic matches
+                out = self._multiple_replace( \
+                    lambda k: k, \
+                    lambda v: v, \
+                    self.genericReplacements(), self._compiledGenericRegex, out)
+            # _______________________________________________________
+            #
+
+            ostream.write(out)
+
+        if self._flush == True:
+            # Clear cache
+            self._flush = False
+            self._cache = []
 
     def process(self, istream, ostream, temp_cache):
         if self.enableProcessByLine():
