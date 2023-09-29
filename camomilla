@@ -45,6 +45,7 @@ ckReprocess = 'reprocess'
 ckReprocessPrevConfig = 'reprocessPrevConfig'
 ckEnableProcessByLine = 'enableProcessByLine'
 
+akEnableGroupFiltering = 'group-filtering'
 ckEnableGroupFiltering = 'enableGroupFiltering'
 ckGroupFilteringMaximumLookahead = 'groupFilteringMaximumLookahead'
 ckGroups = 'groups'
@@ -110,6 +111,9 @@ def makeArgParser(noDefaults, parseReprocess):
         "namespace replacements")
 
     addFeatureOpt(ap, akEnableGenericReplacements, ckEnableGenericReplacements, ad(True), \
+        "generic replacements")
+
+    addFeatureOpt(ap, akEnableGroupFiltering, ckEnableGroupFiltering, ad(True), \
         "generic replacements")
 
     addFeatureOpt(ap, akEnableProcessByLine, ckEnableProcessByLine, ad(True), \
@@ -513,6 +517,7 @@ def makeInitialBaseConfig():
     conf[ckNamespaceReplacements] = dict()
     conf[ckGenericReplacements] = dict()
     conf[ckConfigPaths] = []
+    conf[ckGroupFilteringMaximumLookahead] = 10
 
     conf[ckGroups] = []
 
@@ -523,6 +528,7 @@ def makeInitialConfig(args):
     conf[ckNamespaceReplacements] = dict()
     conf[ckGenericReplacements] = dict()
     conf[ckConfigPaths] = conf[ckConfigPaths]
+    conf[ckGroupFilteringMaximumLookahead] = 10
 
     conf[ckGroups] = []
 
