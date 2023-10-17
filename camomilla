@@ -388,11 +388,16 @@ class Camomilla:
                         if filter in line:
                             delete = True
                             break
+                # Delete cached content
                 if delete == True:
                     # Write deleted content to file
                     with open('_generated/filtered_build_output.txt', 'a') as f:
                         f.write('\n'.join(self._cache))
                     # Clear cache
+                    self._cache = []
+                # Forward cached content
+                else:
+                    selection = self._cache
                     self._cache = []
 
             # If cached lines exceed the maximum lookahead it will be flushed
